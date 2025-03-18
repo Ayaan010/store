@@ -11,7 +11,9 @@ import 'signup_screen.dart';
 /// - Social login options (Facebook and Google)
 /// - Option to navigate to sign up screen
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final String? prefillEmail;
+
+  const LoginScreen({super.key, this.prefillEmail});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -34,6 +36,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Auth service
   final AuthService _authService = AuthService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill email field if provided
+    if (widget.prefillEmail != null && widget.prefillEmail!.isNotEmpty) {
+      _emailController.text = widget.prefillEmail!;
+      // Also pre-fill the reset email field
+      _resetEmailController.text = widget.prefillEmail!;
+    }
+  }
 
   @override
   void dispose() {

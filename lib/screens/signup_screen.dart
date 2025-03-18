@@ -4,6 +4,7 @@ import '../utils/logger_util.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 
 /// SignUpScreen widget for user registration
 class SignUpScreen extends StatefulWidget {
@@ -81,16 +82,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
             _isLoading = false;
           });
 
-          // Navigate to home screen
+          // Navigate to login screen with email pre-filled
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            MaterialPageRoute(
+              builder:
+                  (context) =>
+                      LoginScreen(prefillEmail: _emailController.text.trim()),
+            ),
           );
 
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Registration successful! Welcome to Campus Cart.'),
+              content: Text(
+                'Registration successful! Please sign in with your credentials.',
+              ),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
             ),
@@ -261,8 +268,41 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                     if (value == null || value.isEmpty) {
                                       return 'Please enter your name';
                                     }
+                                    if (!RegExp(r'^[a-zA-Z]').hasMatch(value)) {
+                                      return 'Name must start with a letter';
+                                    }
                                     return null;
                                   },
+                                  inputFormatters: [
+                                    TextInputFormatter.withFunction((
+                                      oldValue,
+                                      newValue,
+                                    ) {
+                                      // If the field is empty or the first character is not a letter, reject
+                                      if (newValue.text.isEmpty ||
+                                          !RegExp(
+                                            r'^[a-zA-Z]',
+                                          ).hasMatch(newValue.text)) {
+                                        // If the user is trying to enter a non-letter as the first character, reject
+                                        if (newValue.text.isNotEmpty &&
+                                            !RegExp(
+                                              r'^[a-zA-Z]',
+                                            ).hasMatch(newValue.text)) {
+                                          return oldValue;
+                                        }
+                                        return newValue;
+                                      }
+
+                                      // Allow letters, numbers, spaces, and some special characters after the first letter
+                                      if (RegExp(
+                                        r'^[a-zA-Z][a-zA-Z0-9\s\.\-]*$',
+                                      ).hasMatch(newValue.text)) {
+                                        return newValue;
+                                      }
+
+                                      return oldValue;
+                                    }),
+                                  ],
                                 ),
                                 const SizedBox(height: 15),
                                 _buildInputField(
@@ -274,8 +314,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                     if (value == null || value.isEmpty) {
                                       return 'Please enter your mobile number';
                                     }
+                                    if (value.length != 10) {
+                                      return 'Phone number must be exactly 10 digits';
+                                    }
+                                    if (!RegExp(
+                                      r'^[0-9]{10}$',
+                                    ).hasMatch(value)) {
+                                      return 'Phone number must contain only digits';
+                                    }
                                     return null;
                                   },
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(10),
+                                  ],
                                 ),
                                 const SizedBox(height: 15),
                                 _buildInputField(
@@ -392,9 +444,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               onTap:
                   () => Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (context) => const LoginScreen(),
-                    ),
+                    MaterialPageRoute(builder: (context) => LoginScreen()),
                   ),
               child: const Text(
                 'Sign In',
@@ -445,6 +495,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     bool isPassword = false,
     TextInputType? keyboardType,
     String? Function(String?)? validator,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -491,6 +542,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ),
         obscureText: isPassword && !_isPasswordVisible,
         keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
       ),
     );
   }

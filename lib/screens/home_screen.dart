@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'profile_screen.dart';
+import 'cart_screen.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 class HomeScreen extends StatefulWidget {
@@ -449,7 +450,16 @@ class _HomeScreenState extends State<HomeScreen> {
               });
 
               // Navigate to the appropriate screen based on the selected index
-              if (index == 3) {
+              if (index == 1) {
+                // Cart tab
+                if (kDebugMode) {
+                  print('Navigating to CartScreen');
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CartScreen()),
+                );
+              } else if (index == 3) {
                 // Profile tab
                 if (kDebugMode) {
                   print('Navigating to ProfileScreen');
