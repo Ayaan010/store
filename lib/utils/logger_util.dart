@@ -31,9 +31,11 @@ class LoggerUtil {
     }
   }
 
-  static void error(String message, [dynamic error, StackTrace? stackTrace]) {
-    if (kDebugMode) {
-      _logger.e(message, error: error, stackTrace: stackTrace);
+  static void error(String message, [dynamic error]) {
+    print('ERROR: $message');
+    if (error != null) {
+      print('Details: $error');
     }
+    // TODO: Implement proper error logging (e.g., Firebase Crashlytics)
   }
 }

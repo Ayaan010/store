@@ -10,36 +10,24 @@ class AuthService {
   // Get current user
   User? get currentUser => _auth.currentUser;
 
+  // Stream of auth state changes
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
+
   // Sign in with email and password
   Future<UserCredential> signInWithEmailAndPassword(
     String email,
     String password,
   ) async {
     try {
-      LoggerUtil.info('Attempting to sign in with email: $email');
-
-      // Validate inputs before attempting sign in
-      if (email.isEmpty || password.isEmpty) {
-        throw FirebaseAuthException(
-          code: 'invalid-credential',
-          message: 'Email and password cannot be empty',
-        );
-      }
-
-      final result = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      LoggerUtil.info('Sign in successful for user: ${result.user?.uid}');
-      return result;
+      final UserCredential userCredential = await _auth
+          .signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password.trim(),
+          );
+      return userCredential;
     } catch (e) {
-      LoggerUtil.error('Error in signInWithEmailAndPassword', e);
-      if (e is FirebaseAuthException) {
-        LoggerUtil.error('Firebase Auth Error Code: ${e.code}');
-        LoggerUtil.error('Firebase Auth Error Message: ${e.message}');
-      }
-      throw _handleAuthException(e);
+      LoggerUtil.error('Error signing in', e);
+      rethrow;
     }
   }
 
@@ -47,137 +35,177 @@ class AuthService {
   Future<UserCredential> signUpWithEmailAndPassword(
     String email,
     String password,
+    String displayName,
   ) async {
     try {
-      LoggerUtil.info('Attempting to create user with email: $email');
+      final UserCredential userCredential = await _auth
+          .createUserWithEmailAndPassword(
+            email: email.trim(),
+            password: password.trim(),
+          );
 
-      // Check if Firebase is initialized - this is not needed as _auth is a final field
-      // and cannot be null, but we'll keep the logging
-      LoggerUtil.debug('Firebase Auth instance: $_auth');
+      // Create user document in Firestore
+      await _firestore.collection('users').doc(userCredential.user!.uid).set({
+        'displayName': displayName.trim(),
+        'email': email.trim(),
+        'role': 'user',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-      final userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      // Update display name
+      await userCredential.user!.updateDisplayName(displayName.trim());
 
-      LoggerUtil.info(
-        'User created successfully with ID: ${userCredential.user?.uid}',
-      );
       return userCredential;
     } catch (e) {
-      LoggerUtil.error('Error in signUpWithEmailAndPassword', e);
-      if (e is FirebaseAuthException) {
-        LoggerUtil.error('Firebase Auth Error Code: ${e.code}');
-        LoggerUtil.error('Firebase Auth Error Message: ${e.message}');
-      }
-      throw _handleAuthException(e);
+      LoggerUtil.error('Error signing up', e);
+      rethrow;
     }
   }
 
   // Sign out
   Future<void> signOut() async {
     try {
-      LoggerUtil.info('Attempting to sign out user');
       await _auth.signOut();
-      LoggerUtil.info('User signed out successfully');
     } catch (e) {
-      LoggerUtil.error('Error in signOut', e);
-      throw _handleAuthException(e);
+      LoggerUtil.error('Error signing out', e);
+      rethrow;
+    }
+  }
+
+  // Check if user is admin
+  Future<bool> isAdmin() async {
+    try {
+      final userData = await getUserData();
+      LoggerUtil.info('Checking admin status for user data: $userData');
+      return userData?['role'] == 'admin';
+    } catch (e) {
+      LoggerUtil.error('Error checking admin status', e);
+      return false;
+    }
+  }
+
+  // Create admin user (should be called only once during initial setup)
+  Future<void> createAdminUser(
+    String email,
+    String password,
+    String displayName,
+  ) async {
+    try {
+      // Check if admin already exists in Firestore
+      final QuerySnapshot adminQuery =
+          await _firestore
+              .collection('users')
+              .where('role', isEqualTo: 'admin')
+              .get();
+
+      if (adminQuery.docs.isNotEmpty) {
+        print('Admin already exists in Firestore');
+        return;
+      }
+
+      UserCredential userCredential;
+      try {
+        // Try to create new user
+        userCredential = await _auth.createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'email-already-in-use') {
+          // If user exists, try to sign in
+          print('Admin exists in Auth, trying to sign in...');
+          userCredential = await _auth.signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password.trim(),
+          );
+        } else {
+          rethrow;
+        }
+      }
+
+      // Create or update admin document in Firestore
+      await _firestore.collection('users').doc(userCredential.user!.uid).set({
+        'displayName': displayName.trim(),
+        'email': email.trim(),
+        'role': 'admin',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update display name
+      await userCredential.user!.updateDisplayName(displayName.trim());
+
+      print('Admin user setup completed successfully');
+    } catch (e) {
+      LoggerUtil.error('Error creating admin user', e);
+      rethrow;
+    }
+  }
+
+  // Reset password
+  Future<void> resetPassword(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+    } catch (e) {
+      LoggerUtil.error('Error resetting password', e);
+      rethrow;
     }
   }
 
   // Update user profile
-  Future<void> updateUserProfile({
-    String? displayName,
-    String? photoURL,
-    String? phoneNumber,
-  }) async {
+  Future<void> updateProfile({String? displayName, String? phoneNumber}) async {
     try {
-      // Check if user is authenticated
-      if (_auth.currentUser == null) {
-        LoggerUtil.error(
-          'Error: Current user is null when trying to update profile',
-        );
-        throw Exception('User not authenticated');
-      }
+      if (currentUser == null) throw Exception('No user logged in');
 
-      // Add a small delay to ensure Firebase Auth is ready
-      await Future.delayed(const Duration(milliseconds: 500));
+      final Map<String, dynamic> updates = {};
 
-      // Update auth profile (name and photo)
       if (displayName != null) {
-        LoggerUtil.info('Updating display name to: $displayName');
-        await _auth.currentUser?.updateDisplayName(displayName);
-
-        // Add another small delay after updating display name
-        await Future.delayed(const Duration(milliseconds: 300));
+        updates['displayName'] = displayName.trim();
+        await currentUser!.updateDisplayName(displayName.trim());
       }
 
-      if (photoURL != null) {
-        LoggerUtil.info('Updating photo URL');
-        await _auth.currentUser?.updatePhotoURL(photoURL);
+      if (phoneNumber != null) {
+        updates['phoneNumber'] = phoneNumber.trim();
       }
 
-      // Store additional user data in Firestore
-      if (_auth.currentUser != null) {
-        LoggerUtil.info(
-          'Saving user data to Firestore for user: ${_auth.currentUser!.uid}',
-        );
-
-        // Check if Firestore is initialized - this is not needed as _firestore is a final field
-        // and cannot be null, but we'll keep the logging
-        LoggerUtil.debug('Firestore instance: $_firestore');
-
-        try {
-          await _firestore.collection('users').doc(_auth.currentUser!.uid).set({
-            'displayName': displayName ?? _auth.currentUser?.displayName,
-            'email': _auth.currentUser!.email,
-            'phoneNumber': phoneNumber,
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-          LoggerUtil.info('User data saved successfully to Firestore');
-        } catch (firestoreError) {
-          LoggerUtil.error('Error saving to Firestore', firestoreError);
-          // Don't throw the error here, as we've already updated the Auth profile
-          // This allows the process to continue even if Firestore update fails
-        }
+      if (updates.isNotEmpty) {
+        await _firestore
+            .collection('users')
+            .doc(currentUser!.uid)
+            .update(updates);
       }
     } catch (e) {
-      LoggerUtil.error('Error in updateUserProfile', e);
-      if (e is FirebaseException) {
-        LoggerUtil.error('Firebase Error Code: ${e.code}');
-        LoggerUtil.error('Firebase Error Message: ${e.message}');
-      }
-      throw _handleAuthException(e);
+      LoggerUtil.error('Error updating profile', e);
+      rethrow;
     }
   }
 
   // Get user additional data from Firestore
   Future<Map<String, dynamic>?> getUserData() async {
     try {
-      if (_auth.currentUser != null) {
-        LoggerUtil.info('Fetching user data for: ${_auth.currentUser!.uid}');
-
-        final docSnapshot =
-            await _firestore
-                .collection('users')
-                .doc(_auth.currentUser!.uid)
-                .get();
-
-        if (docSnapshot.exists) {
-          LoggerUtil.info('User data found in Firestore');
-          return docSnapshot.data();
-        } else {
-          LoggerUtil.warning('No user data found in Firestore');
-        }
-      } else {
+      if (_auth.currentUser == null) {
         LoggerUtil.warning('Cannot fetch user data: No authenticated user');
+        return null;
       }
-      return null;
+
+      LoggerUtil.info('Fetching user data for: ${_auth.currentUser!.uid}');
+
+      final docSnapshot =
+          await _firestore
+              .collection('users')
+              .doc(_auth.currentUser!.uid)
+              .get();
+
+      if (!docSnapshot.exists) {
+        LoggerUtil.warning('No user document found in Firestore');
+        return null;
+      }
+
+      final data = docSnapshot.data();
+      LoggerUtil.info('User data found in Firestore: $data');
+      return data;
     } catch (e) {
       LoggerUtil.error('Error in getUserData', e);
-      throw _handleAuthException(e);
+      rethrow;
     }
   }
 

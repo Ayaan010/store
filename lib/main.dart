@@ -4,45 +4,55 @@ import 'screens/auth_check.dart';
 import 'dart:io' show Platform;
 // import 'package:flutter/foundation.dart' show kDebugMode;
 import 'utils/logger_util.dart';
+import 'services/auth_service.dart';
+import 'screens/login_screen.dart';
 
 void main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  bool firebaseInitialized = false;
-
-  // Platform-specific Firebase initialization with error handling
   try {
-    if (Platform.isAndroid) {
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: 'AIzaSyDCu_xwxG4_grimF6C5UX0E4QcJrizuLnQ',
-          appId: '1:563465632369:android:bf99bf9472ae89b9ee39d0',
-          messagingSenderId: '563465632369',
-          projectId: 'campuscart-473e1',
-          storageBucket: 'campuscart-473e1.firebasestorage.app',
-        ),
-      );
-      firebaseInitialized = true;
-      LoggerUtil.info('Firebase initialized successfully for Android');
-    } else {
-      await Firebase.initializeApp();
-      firebaseInitialized = true;
-      LoggerUtil.info('Firebase initialized successfully for other platform');
+    LoggerUtil.info('Initializing Firebase...');
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: 'AIzaSyDCu_xwxG4_grimF6C5UX0E4QcJrizuLnQ',
+        appId: '1:563465632369:android:bf99bf9472ae89b9ee39d0',
+        messagingSenderId: '563465632369',
+        projectId: 'campuscart-473e1',
+        storageBucket: 'campuscart-473e1.appspot.com',
+      ),
+    );
+    LoggerUtil.info('Firebase initialized successfully');
+
+    // Create admin user if it doesn't exist
+    try {
+      LoggerUtil.info('Attempting to create admin user...');
+      final authService = AuthService();
+
+      // First check if admin exists
+      final adminExists = await authService.isAdmin();
+      print('Admin exists check: $adminExists');
+
+      if (!adminExists) {
+        print('Creating new admin user...');
+        await authService.createAdminUser(
+          'admin@store.com',
+          'Admin@123',
+          'Store Admin',
+        );
+        print('Admin user created successfully');
+      } else {
+        print('Admin user already exists');
+      }
+
+      LoggerUtil.info('Admin user setup completed');
+    } catch (e) {
+      LoggerUtil.error('Error in admin setup', e);
+      print('Detailed admin creation error: ${e.toString()}');
     }
   } catch (e) {
     LoggerUtil.error('Error initializing Firebase', e);
-    if (e is FirebaseException) {
-      LoggerUtil.error('Firebase Error Code: ${e.code}');
-      LoggerUtil.error('Firebase Error Message: ${e.message}');
-    }
-    // Continue with the app even if Firebase fails to initialize
-  }
-
-  if (!firebaseInitialized) {
-    LoggerUtil.warning(
-      'WARNING: Firebase was not initialized. Authentication features will not work.',
-    );
+    print('Firebase initialization error: ${e.toString()}');
   }
 
   runApp(const MyApp());

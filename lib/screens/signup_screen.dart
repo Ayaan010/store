@@ -66,6 +66,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           userCredential = await _authService.signUpWithEmailAndPassword(
             _emailController.text.trim(),
             _passwordController.text.trim(),
+            _nameController.text.trim(),
           );
           LoggerUtil.info('User created: ${userCredential.user?.uid}');
         } catch (authError) {
@@ -110,7 +111,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               LoggerUtil.info(
                 'Updating user profile with name and phone in the background',
               );
-              await _authService.updateUserProfile(
+              await _authService.updateProfile(
                 displayName: _nameController.text.trim(),
                 phoneNumber: _phoneController.text.trim(),
               );

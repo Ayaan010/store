@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../utils/logger_util.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
+import 'admin/admin_screen.dart';
 
 /// LoginScreen is a StatefulWidget that provides the user interface for logging in.
 /// It includes:
@@ -76,20 +77,37 @@ class _LoginScreenState extends State<LoginScreen> {
           _passwordController.text.trim(),
         );
 
-        LoggerUtil.info('Sign in successful, navigating to home screen');
+        // Check if user is admin
+        final isAdmin = await _authService.isAdmin();
+        LoggerUtil.info('User is admin: $isAdmin');
 
-        // Navigate to home screen
+        // Navigate based on user role
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-          );
+          if (isAdmin) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminScreen()),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+            );
+          }
         }
       } catch (e) {
         LoggerUtil.error('Error during sign in', e);
-
         setState(() {
-          _errorMessage = e.toString();
+          if (e.toString().contains('user-not-found')) {
+            _errorMessage =
+                'No user found with this email. Please check your email or sign up.';
+          } else if (e.toString().contains('wrong-password')) {
+            _errorMessage = 'Incorrect password. Please try again.';
+          } else if (e.toString().contains('invalid-credential')) {
+            _errorMessage = 'Incorrect email or password. Please try again.';
+          } else {
+            _errorMessage = 'Login failed: ${e.toString()}';
+          }
         });
       } finally {
         if (mounted) {

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/logger_util.dart';
+import '../services/auth_service.dart';
 import 'home_screen.dart';
 import 'landing_page.dart';
+import 'admin/admin_screen.dart';
 
 class AuthCheck extends StatefulWidget {
   const AuthCheck({super.key});
@@ -13,54 +15,65 @@ class AuthCheck extends StatefulWidget {
 
 class _AuthCheckState extends State<AuthCheck> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  bool _isLoading = true;
-  bool _isAuthenticated = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkAuthStatus();
-  }
-
-  Future<void> _checkAuthStatus() async {
-    try {
-      // Check if user is already signed in
-      final User? user = _auth.currentUser;
-
-      if (user != null) {
-        LoggerUtil.info('User is already signed in: ${user.uid}');
-        setState(() {
-          _isAuthenticated = true;
-          _isLoading = false;
-        });
-      } else {
-        LoggerUtil.info('No user is signed in');
-        setState(() {
-          _isAuthenticated = false;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      LoggerUtil.error('Error checking auth status', e);
-      setState(() {
-        _isAuthenticated = false;
-        _isLoading = false;
-      });
-    }
-  }
+  final AuthService _authService = AuthService();
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFFFAB40),
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF004D40)),
-        ),
-      );
-    }
+    return StreamBuilder<User?>(
+      stream: _auth.authStateChanges(),
+      builder: (context, snapshot) {
+        LoggerUtil.info('Auth state changed: ${snapshot.data?.uid}');
 
-    // Navigate to the appropriate screen based on authentication status
-    return _isAuthenticated ? const HomeScreen() : const LandingPage();
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          LoggerUtil.info('Waiting for auth state...');
+          return const Scaffold(
+            backgroundColor: Color(0xFFFFAB40),
+            body: Center(
+              child: CircularProgressIndicator(color: Color(0xFF004D40)),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          LoggerUtil.info('No user logged in, showing landing page');
+          return const LandingPage();
+        }
+
+        // User is logged in, check if admin
+        return FutureBuilder<Map<String, dynamic>?>(
+          future: _authService.getUserData(),
+          builder: (context, userDataSnapshot) {
+            LoggerUtil.info('Checking user data: ${userDataSnapshot.data}');
+
+            if (userDataSnapshot.connectionState == ConnectionState.waiting) {
+              LoggerUtil.info('Waiting for user data...');
+              return const Scaffold(
+                backgroundColor: Color(0xFFFFAB40),
+                body: Center(
+                  child: CircularProgressIndicator(color: Color(0xFF004D40)),
+                ),
+              );
+            }
+
+            if (userDataSnapshot.hasError) {
+              LoggerUtil.error(
+                'Error fetching user data',
+                userDataSnapshot.error,
+              );
+              return const HomeScreen();
+            }
+
+            final userData = userDataSnapshot.data;
+            final isAdmin = userData?['role'] == 'admin';
+            LoggerUtil.info(
+              'User role: ${userData?['role']}, isAdmin: $isAdmin',
+            );
+
+            // Navigate based on admin status
+            return isAdmin ? const AdminScreen() : const HomeScreen();
+          },
+        );
+      },
+    );
   }
 }
