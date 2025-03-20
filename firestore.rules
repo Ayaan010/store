@@ -11,6 +11,16 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Helper function to check if only quantity and inStock fields are being updated
+    function isQuantityUpdate(product) {
+      let diff = request.resource.data.diff(resource.data);
+      return diff.changedKeys().hasOnly(['quantity', 'inStock']);
+    }
+
     // Users collection
     match /users/{userId} {
       allow read: if isAuthenticated();
@@ -21,8 +31,20 @@ service cloud.firestore {
     match /products/{productId} {
       // Anyone can read products
       allow read: if true;
-      // Only admins can create, update, or delete products
-      allow create, update, delete: if isAdmin();
+      // Admins can do anything with products
+      allow create, delete: if isAdmin();
+      // Allow updates if user is admin OR if they're only updating quantity (for cart operations)
+      allow update: if isAdmin() || (isAuthenticated() && isQuantityUpdate(resource));
+    }
+
+    // Cart collection
+    match /carts/{cartId} {
+      // Users can read their own cart items
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      // Users can create cart items for themselves
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      // Users can update or delete their own cart items
+      allow update, delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
 
     // Categories collection (if you have one)

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product.dart';
+import '../services/cart_service.dart';
+import '../services/auth_service.dart';
 import 'profile_screen.dart';
 import 'cart_screen.dart';
+import 'auth/login_screen.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 class HomeScreen extends StatefulWidget {
@@ -17,6 +20,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = false;
   List<Product> _products = [];
   String _selectedCategory = 'All';
+  final CartService _cartService = CartService();
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
@@ -62,6 +67,64 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _addToCart(Product product) async {
+    // Check if user is authenticated
+    if (_authService.currentUser == null) {
+      if (mounted) {
+        // Show dialog to prompt user to login
+        final shouldLogin = await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Login Required'),
+                content: const Text('You need to login to add items to cart.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Login'),
+                  ),
+                ],
+              ),
+        );
+
+        if (shouldLogin == true) {
+          if (mounted) {
+            // Navigate to login screen
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const LoginScreen()),
+            );
+          }
+        }
+        return;
+      }
+    }
+
+    try {
+      await _cartService.addToCart(product);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Product added to cart'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      // Reload products to update quantities
+      await _loadProducts();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -426,24 +489,33 @@ class _HomeScreenState extends State<HomeScreen> {
                                                         ),
                                                       ),
                                                       if (product.quantity > 0)
-                                                        Container(
-                                                          padding:
-                                                              const EdgeInsets.all(
-                                                                4,
+                                                        GestureDetector(
+                                                          onTap:
+                                                              () => _addToCart(
+                                                                product,
                                                               ),
-                                                          decoration: BoxDecoration(
-                                                            color: const Color(
-                                                              0xFFFFAB40,
-                                                            ),
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  8,
+                                                          child: Container(
+                                                            padding:
+                                                                const EdgeInsets.all(
+                                                                  4,
                                                                 ),
-                                                          ),
-                                                          child: const Icon(
-                                                            Icons.add,
-                                                            color: Colors.white,
-                                                            size: 20,
+                                                            decoration: BoxDecoration(
+                                                              color:
+                                                                  const Color(
+                                                                    0xFFFFAB40,
+                                                                  ),
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    8,
+                                                                  ),
+                                                            ),
+                                                            child: const Icon(
+                                                              Icons
+                                                                  .add_shopping_cart,
+                                                              color:
+                                                                  Colors.white,
+                                                              size: 20,
+                                                            ),
                                                           ),
                                                         )
                                                       else
